@@ -24,6 +24,12 @@ const weekStart = (s) => { const d = fromISO(s); d.setDate(d.getDate() - ((d.get
 const daysBetween = (a, b) => Math.round((fromISO(b) - fromISO(a)) / 86400000);
 const fmtDate = (s, o = { day: 'numeric', month: 'short' }) => fromISO(s).toLocaleDateString('tr-TR', o);
 const DAY_SHORT = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+const isoWeek = (s) => {
+  const d = fromISO(s);
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+  const jan4 = new Date(d.getFullYear(), 0, 4);
+  return 1 + Math.round(((d - jan4) / 86400000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
+};
 
 function relDays(s) {
   const n = daysBetween(s, today());
@@ -192,7 +198,7 @@ function topbar(title, { back, right = '', sub = '' } = {}) {
   </header>`;
 }
 function emptyState(icon, title, text, actions = '') {
-  return `<div class="empty"><div class="ico">${icon}</div><h3>${esc(title)}</h3><p>${esc(text)}</p>${actions}</div>`;
+  return `<div class="empty"><h3>${esc(title)}</h3><p>${esc(text)}</p>${actions}</div>`;
 }
 
 /* ---------- Grafik (tek seri çizgi) ---------- */
@@ -226,7 +232,6 @@ function lineChart(points, { unit = '', digits = 1 } = {}) {
   const id = 'c' + ++chartSeq;
   charts.set(id, { pts, unit, digits, W, H, T, B });
   const path = pts.map((p, i) => `${i ? 'L' : 'M'}${p.cx.toFixed(1)},${p.cy.toFixed(1)}`).join('');
-  const area = pts.length > 1 ? `${path}L${pts[pts.length - 1].cx.toFixed(1)},${H - B}L${pts[0].cx.toFixed(1)},${H - B}Z` : '';
   const xl = [pts[0]];
   if (pts.length > 2) xl.push(pts[Math.floor((pts.length - 1) / 2)]);
   if (pts.length > 1) xl.push(pts[pts.length - 1]);
@@ -234,15 +239,13 @@ function lineChart(points, { unit = '', digits = 1 } = {}) {
   const lblX = Math.min(Math.max(last.cx, L + 20), W - R - 4);
   return `<div class="chart" data-chart="${id}">
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="İlerleme grafiği">
-      <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22d3ee" stop-opacity="0.22"/><stop offset="1" stop-color="#22d3ee" stop-opacity="0"/></linearGradient></defs>
       <g class="grid">${ticks.map((t) => `<line x1="${L}" x2="${W - R}" y1="${sy(t)}" y2="${sy(t)}"/>`).join('')}</g>
       <g class="axis">
         ${ticks.map((t) => `<text x="${L - 8}" y="${sy(t) + 4}" text-anchor="end">${num(t, digits)}</text>`).join('')}
         ${xl.map((p, i) => `<text x="${p.cx}" y="${H - 5}" text-anchor="${xl.length > 1 && i === 0 ? 'start' : i === xl.length - 1 && xl.length > 1 ? 'end' : 'middle'}">${fmtDate(p.date)}</text>`).join('')}
       </g>
-      ${area ? `<path class="area" d="${area}"/>` : ''}
       <path class="line" d="${path}"/>
-      ${pts.map((p) => `<circle class="dot" cx="${p.cx}" cy="${p.cy}" r="4"/>`).join('')}
+      ${pts.map((p, i) => `<circle class="dot${i === pts.length - 1 ? ' last' : ''}" cx="${p.cx}" cy="${p.cy}" r="4"/>`).join('')}
       <text class="lbl" x="${lblX}" y="${Math.max(last.cy - 12, 12)}" text-anchor="end">${num(last.y, digits)}${unit ? ' ' + unit : ''}</text>
       <line class="cross" y1="${T}" y2="${H - B}" x1="0" x2="0" visibility="hidden"/>
       <circle class="hover-dot" r="6" visibility="hidden"/>
@@ -289,29 +292,33 @@ function viewHome(params) {
   const cur = db.sessions.filter((s) => s.date >= ws && s.date <= we);
   const prev = db.sessions.filter((s) => s.date >= pws && s.date <= pwe);
   const isThisWeek = ws === weekStart(today());
-  const hour = new Date().getHours();
-  const greet = hour < 12 ? 'Günaydın' : hour < 18 ? 'İyi günler' : 'İyi akşamlar';
-  const name = db.coachName ? db.coachName : 'Hocam';
+  const mast = `<header class="mast">
+    <div class="mast-top eyebrow"><span>${esc(db.coachName || 'Koç Takip')}</span><span>${fmtDate(today(), { weekday: 'long', day: 'numeric', month: 'long' })}</span></div>
+    <div class="mast-row">
+      <h1>Hafta <span>${isoWeek(ws)}</span></h1>
+      <div class="arrows"><a href="#/?w=${addDays(ws, -7)}" aria-label="Önceki hafta">${ICON.left}</a>${isThisWeek ? `<span>${ICON.right}</span>` : `<a href="#/?w=${addDays(ws, 7)}" aria-label="Sonraki hafta">${ICON.right}</a>`}</div>
+    </div>
+    <div class="range">${fmtDate(ws, { day: 'numeric', month: 'long' })} – ${fmtDate(we, { day: 'numeric', month: 'long' })}${isThisWeek ? '' : ` · <a href="#/" style="color:var(--accent)">Bu haftaya dön</a>`}</div>
+  </header>`;
 
   if (!db.students.length) {
-    return topbar(`${greet}, ${name}`, { sub: fmtDate(today(), { weekday: 'long', day: 'numeric', month: 'long' }) }) +
-      `<div class="card">${emptyState(ICON.users, 'Hoş geldin', 'İlk öğrencini ekle, ardından seanslarını kaydetmeye başla. Tüm veriler bu cihazda saklanır.',
-        `<div class="btn-row" style="max-width:420px;margin:0 auto"><button class="btn btn-primary" data-act="add-student">${ICON.plus}Öğrenci ekle</button><button class="btn" data-act="demo">Örnek verilerle dene</button></div>`)}</div>`;
+    return mast + emptyState(null, 'Kayıt yok', 'İlk öğrenciyi ekle, ardından seanslarını kaydet. Veriler yalnızca bu cihazda saklanır.',
+      `<div class="btn-row" style="max-width:440px"><button class="btn btn-primary" data-act="add-student">Öğrenci ekle</button><button class="btn" data-act="demo">Örnek veri</button></div>`);
   }
 
   const uniq = (arr) => new Set(arr.flatMap((s) => s.studentIds)).size;
   const delta = (a, b) => {
     const d = a - b;
-    if (!d) return `<span>önceki hafta ${num(b, 0)}</span>`;
-    return `<span class="${d > 0 ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'}${num(Math.abs(d), 0)}</span><span>önceki ${num(b, 0)}</span>`;
+    if (!d) return `= önceki ${num(b, 0)}`;
+    return `<span class="${d > 0 ? 'up' : 'down'}">${d > 0 ? '+' : '−'}${num(Math.abs(d), 0)}</span> · önceki ${num(b, 0)}`;
   };
-  const stat = (k, v, b) => `<div class="stat"><div class="k">${k}</div><div class="v">${num(v, 0)}</div><div class="d">${delta(v, b)}</div></div>`;
+  const stat = (k, v, b) => `<div class="stat"><div class="v">${num(v, 0)}</div><div class="k">${k}</div><div class="d">${delta(v, b)}</div></div>`;
 
   const counts = [...Array(7)].map((_, i) => cur.filter((s) => s.date === addDays(ws, i)).length);
   const max = Math.max(1, ...counts);
   const days = counts.map((n, i) => {
     const d = addDays(ws, i);
-    return `<div class="day ${d === today() ? 'today' : ''}"><div class="n">${n || ''}</div><div class="bar ${n ? '' : 'zero'}" style="height:${(n / max) * 70}%"></div><div class="l">${DAY_SHORT[i]}</div></div>`;
+    return `<div class="day ${d === today() ? 'today' : ''}"><div class="n">${n || ''}</div><div class="bar ${n ? '' : 'zero'}" style="height:${(n / max) * 78}%"></div><div class="l">${DAY_SHORT[i]}</div></div>`;
   }).join('');
 
   // Uyarılar
@@ -319,13 +326,13 @@ function viewHome(params) {
   if (isThisWeek) {
     for (const st of activeStudents()) {
       const pi = pkgInfo(st);
-      if (pi && pi.left <= 0) alerts.push({ cls: 'danger', icon: ICON.ticket, st, text: 'Paketi bitti', sort: 0 });
-      else if (pi && pi.left <= 2) alerts.push({ cls: 'warn', icon: ICON.ticket, st, text: `Pakette ${pi.left} ders kaldı`, sort: 1 });
+      if (pi && pi.left <= 0) alerts.push({ cls: 'danger', tag: 'Paket bitti', st, text: `${pi.p.total} derslik paket tamamlandı`, sort: 0 });
+      else if (pi && pi.left <= 2) alerts.push({ cls: 'warn', tag: `${pi.left} ders kaldı`, st, text: `${pi.used}/${pi.p.total} kullanıldı`, sort: 1 });
     }
     for (const st of activeStudents()) {
       const last = lastSessionDate(st.id);
       const gap = last ? daysBetween(last, today()) : daysBetween(toISO(new Date(st.createdAt || Date.now())), today());
-      if (gap >= 14) alerts.push({ cls: 'accent', icon: ICON.clock, st, text: last ? `${gap} gündür gelmedi` : 'Henüz seansı yok', sort: 2 });
+      if (gap >= 14) alerts.push({ cls: 'accent', tag: last ? `${gap} gün` : 'Yeni', st, text: last ? `Son seans ${fmtDate(last, { day: 'numeric', month: 'long' })}` : 'Henüz seansı yok', sort: 2 });
     }
     alerts.sort((a, b) => a.sort - b.sort);
   }
@@ -335,32 +342,24 @@ function viewHome(params) {
   for (const s of cur.sort(bySessDesc)) (byDay[s.date] ||= []).push(s);
 
   return `
-    ${topbar(`${greet}, ${name}`, { sub: fmtDate(today(), { weekday: 'long', day: 'numeric', month: 'long' }) })}
-    <div class="week-nav">
-      <a class="icon-btn" href="#/?w=${addDays(ws, -7)}" aria-label="Önceki hafta">${ICON.left}</a>
-      <div class="label">${isThisWeek ? 'Bu hafta' : fmtDate(ws, { day: 'numeric', month: 'long' }) + ' haftası'}<small>${fmtDate(ws)} – ${fmtDate(we)}</small></div>
-      ${isThisWeek ? '<span class="icon-btn" style="visibility:hidden"></span>' : `<a class="icon-btn" href="#/?w=${addDays(ws, 7)}" aria-label="Sonraki hafta">${ICON.right}</a>`}
-    </div>
+    ${mast}
     <div class="stats">
       ${stat('Ders', cur.length, prev.length)}
       ${stat('Öğrenci', uniq(cur), uniq(prev))}
       ${stat('Kardiyo dk', cardioMinutes(cur), cardioMinutes(prev))}
     </div>
-    <div class="card" style="margin-top:12px;padding-bottom:12px">
-      <div class="section-head" style="margin:0"><h2 style="font-size:15px">Günlere göre ders</h2>${!isThisWeek ? `<a class="link" href="#/" style="color:var(--accent);font-size:14px;font-weight:600">Bu haftaya dön</a>` : ''}</div>
-      <div class="days">${days}</div>
-    </div>
+    <div class="days-wrap"><div class="days">${days}</div></div>
 
-    ${backupDue ? `<div class="section"><a class="card alert accent" href="#/settings" style="display:flex"><div class="ico">${ICON.shield}</div><div style="flex:1"><b>Yedek alma zamanı</b><div class="small text-2">${db.lastBackup ? 'Son yedek ' + relDays(db.lastBackup.slice(0, 10)).toLocaleLowerCase('tr-TR') : 'Henüz hiç yedek alınmadı'}. Telefon kaybolursa veriler gider.</div></div>${ICON.chev}</a></div>` : ''}
+    ${backupDue ? `<div class="section"><a class="note accent" href="#/settings"><div class="main"><b>Yedek gerekli</b><div class="small text-2">${db.lastBackup ? 'Son yedek ' + relDays(db.lastBackup.slice(0, 10)).toLocaleLowerCase('tr-TR') : 'Henüz hiç yedek alınmadı'}. Cihaz kaybolursa veriler gider.</div></div>${ICON.chev}</a></div>` : ''}
 
-    ${alerts.length ? `<div class="section"><div class="section-head"><h2>Dikkat</h2></div><div class="list">
-      ${alerts.map((a) => `<a class="row alert ${a.cls}" href="#/student/${a.st.id}"><div class="ico">${a.icon}</div><div class="main"><div class="title">${esc(a.st.name)}</div><div class="meta">${a.text}</div></div>${ICON.chev}</a>`).join('')}
+    ${alerts.length ? `<div class="section"><div class="section-head"><h2>Dikkat</h2><span class="eyebrow muted">${alerts.length}</span></div><div class="list">
+      ${alerts.map((a) => `<a class="row" href="#/student/${a.st.id}"><div class="main"><div class="title">${esc(a.st.name)}</div><div class="meta">${esc(a.text)}</div></div><span class="tag ${a.cls}">${esc(a.tag)}</span>${ICON.chev}</a>`).join('')}
     </div></div>` : ''}
 
     <div class="section">
-      <div class="section-head"><h2>${isThisWeek ? 'Bu haftanın seansları' : 'Haftanın seansları'}</h2><a class="link" href="#/session/new">+ Seans</a></div>
+      <div class="section-head"><h2>Seanslar</h2><a class="link" href="#/session/new">+ Seans</a></div>
       ${cur.length ? `<div class="list">${Object.keys(byDay).map((d) => `<div class="group-label">${fmtDate(d, { weekday: 'long', day: 'numeric', month: 'long' })}</div>${byDay[d].map(sessionRow).join('')}`).join('')}</div>`
-        : `<div class="card">${emptyState(ICON.dumbbell, 'Bu hafta seans yok', 'Alttaki + düğmesiyle ilk seansı kaydet.')}</div>`}
+        : `<div>${emptyState(ICON.dumbbell, 'Bu hafta seans yok', 'Alttaki + düğmesiyle ilk seansı kaydet.')}</div>`}
     </div>`;
 }
 
@@ -373,7 +372,7 @@ function sessionRow(s, opts = {}) {
       <div class="title">${opts.hideStudent ? esc(sessionTitle(s)) : esc(studentNames(s.studentIds))}</div>
       <div class="meta">${opts.hideStudent ? esc(sessionMeta(s)) || 'Boş seans' : esc(sessionTitle(s))}</div>
     </div>
-    ${group ? `<span class="chip">${ICON.users.replace('<svg', '<svg')}${s.studentIds.length}</span>` : ''}
+    ${group ? `<span class="tag">Grup ${s.studentIds.length}</span>` : ''}
     ${ICON.chev}
   </a>`;
 }
@@ -396,7 +395,7 @@ function viewStudents(params) {
   return `
     ${topbar(showArchived ? 'Arşiv' : 'Öğrenciler', { back: showArchived ? '#/students' : '', right: showArchived ? '' : `<button class="btn btn-primary btn-sm" data-act="add-student">${ICON.plus}Ekle</button>` })}
     ${list.length > 5 ? `<div class="search" style="margin-bottom:12px">${ICON.search}<input class="input" placeholder="Öğrenci ara" data-filter=".list .row"></div>` : ''}
-    ${list.length ? `<div class="list">${rows}</div>` : `<div class="card">${emptyState(ICON.users, showArchived ? 'Arşiv boş' : 'Henüz öğrenci yok', showArchived ? 'Arşivlenen öğrenciler burada görünür.' : 'İlk öğrencini ekleyerek başla.', showArchived ? '' : `<button class="btn btn-primary" data-act="add-student">${ICON.plus}Öğrenci ekle</button>`)}</div>`}
+    ${list.length ? `<div class="list">${rows}</div>` : `<div>${emptyState(ICON.users, showArchived ? 'Arşiv boş' : 'Henüz öğrenci yok', showArchived ? 'Arşivlenen öğrenciler burada görünür.' : 'İlk öğrencini ekleyerek başla.', showArchived ? '' : `<button class="btn btn-primary" data-act="add-student">${ICON.plus}Öğrenci ekle</button>`)}</div>`}
     ${!showArchived && archivedCount ? `<div style="text-align:center;margin-top:16px"><a class="btn btn-ghost btn-sm" href="#/students?arsiv=1">Arşiv (${archivedCount})</a></div>` : ''}`;
 }
 
@@ -421,17 +420,16 @@ function viewStudent(id, tab, params) {
   if (pi) {
     const cls = pi.left <= 0 ? 'out' : pi.left <= 2 ? 'low' : '';
     const cells = pi.p.total <= 40 ? [...Array(pi.p.total)].map((_, i) => `<i class="${i < pi.used ? 'used' : ''}"></i>`).join('') : '';
-    pkgCard = `<div class="card pkg ${cls}" style="margin-top:14px">
+    pkgCard = `<div class="pkg ${cls}">
       <div class="main">
         <div class="eyebrow">Paket · ${fmtDate(pi.p.start, { day: 'numeric', month: 'short', year: 'numeric' })}</div>
-        <div class="big">${pi.left <= 0 ? (pi.left < 0 ? `${-pi.left} ders fazla` : 'Bitti') : `${pi.left} ders kaldı`}</div>
-        <div class="small text-2">${pi.used} / ${pi.p.total} kullanıldı</div>
+        <div class="big">${pi.left <= 0 ? (pi.left < 0 ? `+${-pi.left}<small>fazla ders</small>` : 'Bitti') : `${pi.left}<small>/ ${pi.p.total} ders kaldı</small>`}</div>
         ${cells ? `<div class="meter">${cells}</div>` : ''}
       </div>
       <button class="btn btn-sm ${pi.left <= 2 ? 'btn-primary' : ''}" data-act="new-package" data-id="${id}">Yeni paket</button>
     </div>`;
   } else {
-    pkgCard = `<div class="card pkg" style="margin-top:14px"><div class="main"><div class="eyebrow">Paket</div><div class="text-2">Aktif paket yok</div></div><button class="btn btn-sm" data-act="new-package" data-id="${id}">Paket tanımla</button></div>`;
+    pkgCard = `<div class="pkg"><div class="main"><div class="eyebrow">Paket</div><div class="text-2" style="margin-top:6px">Aktif paket yok</div></div><button class="btn btn-sm" data-act="new-package" data-id="${id}">Paket tanımla</button></div>`;
   }
 
   const tabs = [['history', 'Geçmiş'], ['progress', 'İlerleme'], ['body', 'Ölçümler'], ['info', 'Bilgi']];
@@ -442,17 +440,17 @@ function viewStudent(id, tab, params) {
   else body = studentInfo(st);
 
   return `
-    ${topbar('', { back: st.archived ? '#/students?arsiv=1' : '#/students' })}
-    <div class="profile" style="margin-top:-6px">
+    <div style="margin-bottom:16px"><a class="icon-btn" href="${st.archived ? '#/students?arsiv=1' : '#/students'}" aria-label="Geri">${ICON.back}</a></div>
+    <div class="profile">
       <div class="avatar lg">${esc(initials(st.name))}</div>
       <div class="main">
         <h1>${esc(st.name)}</h1>
-        <div class="text-2 small">${[st.goal, last ? 'Son: ' + relDays(last).toLocaleLowerCase('tr-TR') : 'Henüz seans yok', `bu ay ${thisMonth} ders`].filter(Boolean).map(esc).join(' · ')}</div>
+        <div class="sub">${[st.goal, last ? 'Son: ' + relDays(last).toLocaleLowerCase('tr-TR') : 'Henüz seans yok', `bu ay ${thisMonth} ders`].filter(Boolean).map(esc).join(' · ')}</div>
       </div>
     </div>
-    ${st.archived ? `<div class="card alert warn" style="margin-top:14px"><div class="ico">${ICON.alert}</div><div style="flex:1">Bu öğrenci arşivde.</div><button class="btn btn-sm" data-act="unarchive" data-id="${id}">Geri al</button></div>` : ''}
+    ${st.archived ? `<div class="note warn" style="margin-top:14px"><div class="main"><b>Arşivde</b><div class="small text-2">Listede görünmez, geçmişi saklanır.</div></div><button class="btn btn-sm" data-act="unarchive" data-id="${id}">Geri al</button></div>` : ''}
     ${pkgCard}
-    <div class="btn-row" style="margin-top:12px">
+    <div class="btn-row" style="margin-top:16px">
       <a class="btn btn-primary" href="#/session/new?student=${id}">${ICON.plus}Yeni seans</a>
       ${st.phone ? `<a class="btn" href="tel:${esc(st.phone.replace(/\s/g, ''))}">Ara</a>` : ''}
     </div>
@@ -461,7 +459,7 @@ function viewStudent(id, tab, params) {
 }
 
 function studentHistory(st, sess) {
-  if (!sess.length) return `<div class="card">${emptyState(ICON.history, 'Seans yok', 'Bu öğrenci için ilk seansı kaydet.')}</div>`;
+  if (!sess.length) return `<div>${emptyState(ICON.history, 'Seans yok', 'Bu öğrenci için ilk seansı kaydet.')}</div>`;
   return `<div class="list">${sess.map((s) => {
     const d = fromISO(s.date);
     const lines = s.exercises.map((e) => `<div class="small"><span style="color:var(--text)">${esc(e.name)}</span> <span class="text-2">${esc(exSummary(e))}</span></div>`).join('');
@@ -505,7 +503,7 @@ function studentProgress(st, sess, params) {
     c.n++; counts.set(k, c);
   }
   const exList = [...counts.values()].sort((a, b) => b.n - a.n);
-  if (!exList.length) return `<div class="card">${emptyState(ICON.dumbbell, 'Henüz veri yok', 'Seans kaydettikçe her egzersizin gelişimi burada görünür.')}</div>`;
+  if (!exList.length) return `<div>${emptyState(ICON.dumbbell, 'Henüz veri yok', 'Seans kaydettikçe her egzersizin gelişimi burada görünür.')}</div>`;
   const sel = exList.find((e) => norm(e.name) === norm(params.get('ex'))) || exList[0];
   const series = exerciseSeries(sess, sel.name);
   const metrics = sel.kind === 'cardio' ? CARDIO_METRICS : STRENGTH_METRICS;
@@ -552,14 +550,14 @@ const BODY_FIELDS = [
 function studentBody(st, params) {
   const rows = db.metrics.filter((m) => m.studentId === st.id).sort((a, b) => a.date.localeCompare(b.date));
   const add = `<button class="btn btn-primary btn-block" data-act="add-metric" data-id="${st.id}">${ICON.plus}Ölçüm ekle</button>`;
-  if (!rows.length) return `<div class="card">${emptyState(ICON.dumbbell, 'Ölçüm yok', 'Kilo, yağ oranı ve çevre ölçülerini kaydederek değişimi takip et.')}</div><div style="margin-top:12px">${add}</div>`;
+  if (!rows.length) return `<div>${emptyState(ICON.dumbbell, 'Ölçüm yok', 'Kilo, yağ oranı ve çevre ölçülerini kaydederek değişimi takip et.')}</div><div style="margin-top:12px">${add}</div>`;
   const avail = BODY_FIELDS.filter(([k]) => rows.some((r) => r[k] !== '' && r[k] != null));
   const fk = avail.find(([k]) => k === params.get('f')) || avail[0];
   const kpis = avail.map(([k, l, u]) => {
     const vals = rows.filter((r) => r[k] !== '' && r[k] != null);
     const lastV = vals[vals.length - 1][k], firstV = vals[0][k];
     const dlt = vals.length > 1 ? lastV - firstV : null;
-    return `<div class="kpi"><div class="k">${l}</div><div class="v">${num(lastV)}<span class="small text-2"> ${u}</span></div><div class="d">${dlt == null ? '&nbsp;' : (dlt > 0 ? '+' : '') + num(dlt) + ' ' + u + ' (ilk ölçüme göre)'}</div></div>`;
+    return `<div class="kpi"><div class="k">${l}</div><div class="v">${num(lastV)}<small>${u}</small></div><div class="d">${dlt == null ? 'tek ölçüm' : (dlt > 0 ? '+' : dlt < 0 ? '−' : '') + num(Math.abs(dlt)) + ' ' + u + ' toplam'}</div></div>`;
   }).join('');
   const pts = fk ? rows.filter((r) => r[fk[0]] !== '' && r[fk[0]] != null).map((r) => ({ date: r.date, y: r[fk[0]] })) : [];
   return `
@@ -671,12 +669,13 @@ function exerciseCards(d) {
     }
     return `<div class="ex-card">
       <div class="ex-head">
+        <span class="idx">${pad(i + 1)}</span>
         <div class="name">${esc(ex.name)}</div>
         <span class="chip ${ex.kind === 'cardio' ? 'accent' : ''}">${ex.kind === 'cardio' ? 'Kardiyo' : 'Kuvvet'}</span>
         ${i > 0 ? `<button class="icon-btn" data-act="ex-up" data-ex="${ex.id}" aria-label="Yukarı taşı"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>` : ''}
         <button class="icon-btn" data-act="del-ex" data-ex="${ex.id}" aria-label="Egzersizi sil">${ICON.trash}</button>
       </div>
-      ${hint ? `<div class="ex-hint">${ICON.history}Geçen sefer (${fmtDate(hint.date)}): ${esc(hint.text) || '–'}</div>` : ''}
+      ${hint ? `<div class="ex-hint">Geçen sefer · ${fmtDate(hint.date)} · <em>${esc(hint.text) || '–'}</em></div>` : ''}
       ${body}
     </div>`;
   }).join('');
@@ -722,10 +721,10 @@ function viewTemplates() {
     ${topbar('Şablonlar', { right: `<a class="btn btn-primary btn-sm" href="#/template/new">${ICON.plus}Yeni</a>` })}
     <p class="text-2 small" style="margin-top:-6px">Sık kullandığın antrenmanları kaydet; seans girerken tek dokunuşla yükle.</p>
     ${list.length ? `<div class="list">${list.map((t) => `<a class="row" href="#/template/${t.id}">
-      <div class="avatar" style="border-radius:12px">${ICON.dumbbell.replace('<svg', '<svg width="20" height="20" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"')}</div>
+      <div class="avatar">${t.exercises.length}</div>
       <div class="main"><div class="title">${esc(t.name)}</div><div class="meta">${esc(t.exercises.map((e) => e.name).join(', ')) || 'Boş'}</div></div>
       ${ICON.chev}</a>`).join('')}</div>`
-      : `<div class="card">${emptyState(ICON.copy, 'Şablon yok', 'Örn. “Bacak Günü A” veya “HIIT 20 dk” gibi bir şablon oluştur.', `<a class="btn btn-primary" href="#/template/new">${ICON.plus}Şablon oluştur</a>`)}</div>`}`;
+      : `<div>${emptyState(ICON.copy, 'Şablon yok', 'Örn. “Bacak Günü A” veya “HIIT 20 dk” gibi bir şablon oluştur.', `<a class="btn btn-primary" href="#/template/new">${ICON.plus}Şablon oluştur</a>`)}</div>`}`;
 }
 
 function viewTemplateEditor(id) {
@@ -748,12 +747,12 @@ function viewSettings() {
   return `
     ${topbar('Ayarlar')}
     <div class="card">
-      <label class="field" style="margin:0"><span>Adın (ana ekranda selamlama için)</span><input class="input" value="${esc(db.coachName)}" data-bind="settings:coachName" placeholder="Örn. Murat Hoca"></label>
+      <label class="field" style="margin:0"><span>Adın (ana ekranın üstünde görünür)</span><input class="input" value="${esc(db.coachName)}" data-bind="settings:coachName" placeholder="Örn. Murat Hoca"></label>
     </div>
 
     <div class="section"><div class="section-head"><h2>Yedekleme</h2></div>
       <div class="card">
-        <div class="alert accent" style="margin-bottom:14px"><div class="ico">${ICON.shield}</div><div class="small text-2">Veriler sadece bu cihazda saklanır. Haftada bir yedek alıp Dosyalar/iCloud/Drive'a kaydetmen önerilir. Yeni bir cihaza geçerken yedeği orada yükle.</div></div>
+        <div class="note accent" style="margin-bottom:16px"><div class="main"><b>Yalnızca bu cihazda</b><div class="small text-2">Veriler sadece bu cihazda saklanır. Haftada bir yedek alıp Dosyalar/iCloud/Drive'a kaydetmen önerilir. Yeni bir cihaza geçerken yedeği orada yükle.</div></div></div>
         <div class="small text-2" style="margin-bottom:12px">Son yedek: <b style="color:var(--text)">${db.lastBackup ? fmtDate(db.lastBackup.slice(0, 10), { day: 'numeric', month: 'long', year: 'numeric' }) : 'Hiç alınmadı'}</b></div>
         <div class="btn-row">
           <button class="btn btn-primary" data-act="export">${ICON.download}Yedek al</button>
@@ -767,7 +766,7 @@ function viewSettings() {
         <div class="kpi"><div class="k">Öğrenci</div><div class="v">${db.students.length}</div></div>
         <div class="kpi"><div class="k">Seans</div><div class="v">${db.sessions.length}</div></div>
         <div class="kpi"><div class="k">Şablon</div><div class="v">${db.templates.length}</div></div>
-        <div class="kpi"><div class="k">Veri boyutu</div><div class="v">${num(bytes / 1024)}</div><div class="d">KB</div></div>
+        <div class="kpi"><div class="k">Veri</div><div class="v">${num(bytes / 1024, 0)}<small>KB</small></div></div>
       </div>
     </div>
 

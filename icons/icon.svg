@@ -1,10 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#0b0e12"/>
-  <rect x="24" y="24" width="464" height="464" rx="96" fill="#131820"/>
-  <g fill="none" stroke="#22d3ee" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M150 176v160M110 214v84M362 176v160M402 214v84" stroke-width="40"/>
-    <path d="M150 256h212" stroke-width="40"/>
+  <rect width="512" height="512" fill="#0a0a0a"/>
+  <g fill="#f4f4f1">
+    <rect x="96" y="176" width="40" height="160"/>
+    <rect x="376" y="176" width="40" height="160"/>
+    <rect x="56" y="216" width="28" height="80"/>
+    <rect x="428" y="216" width="28" height="80"/>
+    <rect x="136" y="240" width="240" height="32"/>
   </g>
-  <path d="M120 392h272" stroke="#22d3ee" stroke-opacity="0.35" stroke-width="16" stroke-linecap="round"/>
-  <path d="M120 392h170" stroke="#22d3ee" stroke-width="16" stroke-linecap="round"/>
+  <rect x="96" y="384" width="320" height="16" fill="#262626"/>
+  <rect x="96" y="384" width="200" height="16" fill="#22d3ee"/>
 </svg>
